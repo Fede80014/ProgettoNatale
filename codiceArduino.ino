@@ -10,17 +10,20 @@ SoftwareSerial BTSerial(BT_RX, BT_TX);
 // Configurazione Pin dei componenti
 const int ledPin = 4;       // Pin dei LED
 const int buzzerPin = 8;    // Pin del buzzer
-const int sensorPin = A1;   // Sensore di prossimità/distanza sulla porta A1
 
-// Configurazione LCD con I2C (indirizzo 0x27, display 16x2)
+// Pin del sensore a ultrasuoni
+const int trigPin = 5;      
+const int echoPin = 6;      
+
+// Configurazione LCD con I2C 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Variabili di stato
 bool statoLed = false;
 int indiceFrase = 0;
 
-// Soglia di attivazione del sensore su A1 (regolabile in base al sensore usato)
-const int SOGLIA_PROSSIMITA = 500; 
+// Soglia di attivazione in centimetri
+const int SOGLIA_DISTANZA_CM = 30; 
 
 // Elenco delle frasi da mostrare sul display LCD
 String frasi[] = {
@@ -34,7 +37,10 @@ const int totaleFrasi = 4;
 void setup() {
   pinMode(ledPin, OUTPUT);
   pinMode(buzzerPin, OUTPUT);
-  pinMode(sensorPin, INPUT);
+  
+  // Configurazione pin ultrasuoni
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
   
   // Avvia le comunicazioni seriali
   Serial.begin(9600);
@@ -48,10 +54,11 @@ void setup() {
 }
 
 void loop() {
-  // 1. Controllo automatico tramite sensore su porta A1
-  int valoreSensore = analogRead(sensorPin);
-  if (valoreSensore > SOGLIA_PROSSIMITA) {
-    // Azione automatica al rilevamento di vicinanza
+  // 1. Controllo automatico tramite sensore a ultrasuoni HC-SR04
+  long distanza = calcolaDistanzaCM();
+  
+  // Se la distanza è valida e inferiore alla soglia
+  if (distanza > 0 && distanza < SOGLIA_DISTANZA_CM) {
     attivaRilevamentoAutomatico();
     delay(2000); // Pausa per evitare attivazioni ripetute troppo rapide
   }
@@ -60,11 +67,9 @@ void loop() {
   if (BTSerial.available() > 0) {
     char comando = BTSerial.read();
     
-    // Mostra sul monitor seriale del PC il comando ricevuto
     Serial.print("Comando ricevuto: ");
     Serial.println(comando);
 
-    // Gestione dei comandi in base alla lettera inviata dall'app
     if (comando == 'L') {
       gestisciLuci();
     } 
@@ -77,6 +82,19 @@ void loop() {
   }
 }
 
+// Funzione per calcolare la distanza con l'HC-SR04
+long calcolaDistanzaCM() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long durata = pulseIn(echoPin, HIGH, 30000); // Timeout di sicurezza a 30ms
+  long distanza = durata * 0.034 / 2; // Formula per convertire il tempo in cm
+  return distanza;
+}
+
 void gestisciLuci() {
   statoLed = !statoLed;
   digitalWrite(ledPin, statoLed);
@@ -85,7 +103,7 @@ void gestisciLuci() {
 void prossimaFraseLCD() {
   indiceFrase++;
   if (indiceFrase >= totaleFrasi) {
-    indiceFrase = 0; // Ricomincia se arriva alla fine
+    indiceFrase = 0;
   }
   
   lcd.clear();
@@ -94,36 +112,34 @@ void prossimaFraseLCD() {
 }
 
 void suonaMelodia() {
-  int note[] = {659, 659, 659, 659, 659, 659, 659, 789, 523, 587, 659, 689, 689, 689, 689, 659, 659, 659, 587, 587, 659, 587, 783 };
-  int durate[] = {200, 200, 400, 200, 200, 400, 200, 200, 200, 200, 400, 200, 200, 400 , 200, 200, 200, 200, 400, 400, 200, 200, 400};
+  int note[] = {659, 659, 659, 659, 659, 659, 659, 789, 523, 587, 659, 689, 689, 689, 689, 659, 659, 659, 587, 587, 659, 587, 783};
+  int durate[] = {200, 200, 400, 200, 200, 400, 200, 200, 200, 200, 400, 200, 200, 400, 200, 200, 200, 200, 400, 400, 200, 200, 400};
 
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Suono Melodia..");
 
-  for (int i = 0; i < 23; i++) {
+  int numNote = sizeof(note) / sizeof(note[0]);
+
+  for (int i = 0; i < numNote; i++) {
     tone(buzzerPin, note[i]);
     delay(durate[i]);
     noTone(buzzerPin);
     delay(50);
   }
   
-  // Ripristina la frase sul display alla fine della canzone
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(frasi[indiceFrase]);
 }
 
 void attivaRilevamentoAutomatico() {
-  // Accende le luci
   statoLed = true;
   digitalWrite(ledPin, HIGH);
   
-  // Mostra direttamente la frase sullo schermo LCD
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(frasi[indiceFrase]);
 
-  // Suona la melodia
   suonaMelodia();
 }
